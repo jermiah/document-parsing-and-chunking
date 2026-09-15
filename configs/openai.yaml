@@ -1,0 +1,20 @@
+parser: docling
+ocr_engine: rapidocr
+ocr_fallback_engine: tesseract_cli
+picture_annotations_enabled: true
+contextual_enrichment_enabled: true
+contextual_model: gpt-5.6-terra
+contextual_reserve_tokens: 128
+annotation_provider: openai
+annotation_model: gpt-5.6-terra
+annotation_revision: 'gpt-5.6-terra'
+prompt_version: picture-v1
+model_dir: models/docling
+tokenizer_path: models/bge-m3/tokenizer.json
+target_tokens: 450
+max_tokens: 700
+max_images: 2
+
+compare_workflows: false
+pipeline_comparison: true
+topology_model: gpt-5.6-terra

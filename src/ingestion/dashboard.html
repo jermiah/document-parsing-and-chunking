@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Document library</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;background:#f5f5f1;color:#202b29;margin:0}main{max-width:1080px;margin:48px auto;padding:0 24px}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:38px;letter-spacing:-1px;margin:0}h2{font-size:21px}section,article{background:white;border:1px solid #d9dfda;border-radius:8px;padding:24px;margin:24px 0}p{color:#53625c}label{display:inline-block;margin-right:16px}input,button{font:inherit;padding:9px;border:1px solid #b3beb7;border-radius:4px}button{cursor:pointer;background:#1e5542;color:white}button:disabled{opacity:.5;cursor:wait}a{color:#205c46}nav{display:flex;gap:20px;align-items:center}#notice{white-space:pre-wrap}ul{padding-left:20px}.actions{display:flex;gap:20px;align-items:center;flex-wrap:wrap}.badge{padding:3px 9px;background:#edf2ed;border-radius:4px}small{color:#53625c}@media(max-width:650px){header{display:block}label{display:block;margin-bottom:12px}input{max-width:100%;box-sizing:border-box}}
+
+.document-heading{display:flex;justify-content:space-between;gap:20px;align-items:center}.document-heading h2{margin:0;overflow-wrap:anywhere}.document-heading p{margin:4px 0 0;font-size:14px}
+button.secondary{background:white;color:#205c46}button.danger{background:white;color:#963d32;border-color:#dec3bd}button:hover{filter:brightness(.95)}button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #6b9584;outline-offset:3px}button:disabled{cursor:not-allowed}
+.run-row{padding:20px 0;border-top:1px solid #e5e9e5;margin-top:18px}.run-heading{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.run-heading h3{font-size:15px;margin:0;font-weight:600}.run-id{font:12px ui-monospace,monospace;color:#64736b}.status{font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:#edf1ed;color:#40554b}.status.failed,.status.delete_failed{background:#f8eee9;color:#914632}.status.paused{background:#f5f0df;color:#756022}.status.complete{background:#e5f1e9;color:#245d40}
+.run-stats{display:flex;gap:28px;flex-wrap:wrap;margin:14px 0;font-size:14px;font-variant-numeric:tabular-nums}.run-stats strong{display:block;font-size:20px;line-height:1.3;color:#263c32;font-weight:600}.run-stats span{color:#64736b}.run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.run-actions button,.run-actions a{font-size:13px;padding:6px 12px}.run-actions a{padding-left:0}.run-meta{font-size:13px;margin:8px 0;color:#64736b}.run-details{margin-top:12px;font-size:13px}.run-details p{white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch}.history{border-top:1px solid #d9dfda;padding-top:16px;margin-top:8px}.history>summary{font-size:14px;font-weight:600;color:#40554b;cursor:pointer}.history .run-row{margin-top:12px}.run-details summary{cursor:pointer}.result-select{display:block;margin:16px 0}.result-select select{font:inherit;max-width:100%;padding:8px;border:1px solid #b3beb7;border-radius:4px}.empty-result{padding:24px;background:#f5f6f2;border-radius:6px}.library-help{font-size:14px;max-width:75ch}#comparison{width:100%;height:1100px;border:1px solid #d9dfda}
+@media(max-width:650px){main{padding:0 16px;margin:24px auto}article,section{padding:18px}.document-heading{align-items:flex-start;flex-direction:column}.actions{gap:12px}.run-stats{gap:20px}.run-actions{gap:8px}h1{font-size:30px}}
+</style>
+<main><header><div><small>DOCUMENT INGESTION</small><h1>Your document library</h1><p>Open saved chunks, inspect their sources, or process a PDF.</p></div><a href="/docs">API documentation</a></header>
+<section><h2>Add documents</h2><form id="upload"><label>PDF files<br><input id="pdfs" type="file" name="files" accept="application/pdf" multiple required></label><div id="upload-years"></div><fieldset id="pipeline-selection"><legend>Choose pipelines to run</legend>
+<label><input type="checkbox" name="pipeline" value="docling" checked> Hybrid + image context: Docling + RapidOCR → Hybrid</label><br>
+<label><input type="checkbox" name="pipeline" value="topology" checked> Topological + image context: Docling + OCR → Inspector → SIR → Refiner</label><br>
+<p><strong></strong> It can run on another machine. The local CPU Docker container does not host this model. Agentic topological parsing uses the OpenAI API; it does not require a local GPU.</p>
+<p>These choices also apply when you click Reprocess below. Selected pipelines run sequentially.</p></fieldset><button type="submit">Queue documents</button></form><p>Select one or more PDFs and enter a year for each. Documents run sequentially in page batches. Only the selected pipelines run, in order: Hybrid + image context, then Topological + image context. OpenAI enrichment runs when enabled in the server configuration.</p></section>
+<p id="notice" role="status" aria-live="polite"></p><nav><h2>Saved documents</h2><button id="refresh">Refresh</button><span id="count"></span></nav><p class="library-help">Reprocess creates a new run. Earlier chunks stay in run history until you delete that run. Select a run to inspect its saved results.</p><div id="documents"></div><nav><button id="prev">Previous</button><button id="next">Next</button></nav><section id="selected-result"><h2>Document results</h2><p id="result-label">Select a document to see its pipeline results. Their metrics appear below the chunks.</p><div id="result-links"></div><iframe id="comparison" title="Pipeline chunks and comparison metrics" hidden></iframe></section></main>
+<script>
+const container=document.querySelector('#documents'),notice=document.querySelector('#notice');let offset=0,total=0,busy=false,selectedDocument=null,selectedRun=null;
+const expandedHistory=new Set(),expandedDetails=new Set();
+const pipelineNames={docling:"Hybrid + image context",topology:"Topological + image context"};
+function el(tag,text){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e}
+function pipelineForm(){const selected=[...document.querySelectorAll('input[name="pipeline"]:checked')].map(i=>i.value);if(!selected.length){notice.textContent='Choose at least one pipeline.';return null}const body=new FormData();body.append('pipelines',JSON.stringify(selected));return body}
+function link(label,url){const a=el('a',label);a.href=url;return a}
+function action(label,handler,kind='secondary'){
+  const button=el('button',label);button.type='button';button.className=kind;
+  button.disabled=busy;button.onclick=handler;return button;
+}
+function selectRun(doc,run){
+  selectedDocument=doc.document_id;selectedRun=run?.ingestion_run_id||null;
+  showResult(doc);document.querySelector('#selected-result').scrollIntoView({behavior:'smooth'});
+}
+function stat(value,label){const item=el('div');item.append(el('strong',value),el('span',label));return item}
+function renderRun(doc,run,latest){
+  const row=el('div');row.className='run-row';
+  const heading=el('div');heading.className='run-heading';
+  const badge=el('span',run.status.replaceAll('_',' '));badge.className='status '+run.status;
+  heading.append(el('h3',latest?'Latest run':'Previous run'),badge,el('span',run.active?'Current result':''));
+  const id=el('span',run.ingestion_run_id.slice(0,8));id.className='run-id';heading.append(id);row.append(heading);
+  const names=(run.pipeline_order||[run.parser]).map(name=>pipelineNames[name]||name).join(' + ');
+  const when=run.queued_at?new Date(run.queued_at*1000).toLocaleString():'Date unavailable for this older run';
+  const meta=el('p',names+' · '+when);meta.className='run-meta';row.append(meta);
+  const stats=el('div');stats.className='run-stats';stats.append(stat(run.chunk_count.toLocaleString(),'saved chunks'));
+  if(run.job){
+    const progress=run.progress||{};
+    stats.append(stat((progress.completed_pages||0).toLocaleString(),'page passes saved'));
+    if(progress.current_pipeline)stats.append(stat(pipelineNames[progress.current_pipeline]||progress.current_pipeline,'current pipeline'));
+  }
+  row.append(stats);
+  const actions=el('div');actions.className='run-actions';
+  const view=action(run.status==='complete'?'View results':'View saved checkpoint',()=>selectRun(doc,run));
+  view.disabled=busy||!run.debug_url||run.deletion_requested;actions.append(view);
+  if(run.job&&['failed','paused'].includes(run.status)&&!run.deletion_requested){
+    if(run.can_resume){
+      actions.append(action('Resume',()=>perform('/v1/runs/'+run.ingestion_run_id+'/resume'),'primary'));
+    }else{
+      actions.append(action('Reprocess required',()=>{const body=pipelineForm();if(body)perform('/v1/documents/'+doc.document_id+'/reprocess',body)},'primary'));
+    }
+  }
+  const remove=action(run.deletion_requested?'Retry delete':'Delete run',()=>removeRun(doc,run),'danger');
+  remove.disabled=busy||['uploading','queued','processing'].includes(run.status);
+  remove.title=remove.disabled?'A queued or processing run cannot be deleted.':'Delete this run and all its batches, chunks and checkpoints.';
+  actions.append(remove);row.append(actions);
+  const details=el('details');details.className='run-details';details.open=expandedDetails.has(run.ingestion_run_id);
+  details.ontoggle=()=>details.open?expandedDetails.add(run.ingestion_run_id):expandedDetails.delete(run.ingestion_run_id);
+  details.append(el('summary',run.errors?.message?'Details · issue recorded':'Details'));
+  details.append(el('p','Run ID: '+run.ingestion_run_id+' · Image annotations: '+run.annotation_status.replaceAll('_',' ')));
+  if(run.job){const p=run.progress||{};details.append(el('p',(p.processed_pages||0)+' page passes processed; '+(p.completed_pages||0)+' saved. A page processed by two pipelines counts twice. Stage: '+(p.stage||run.status).replaceAll('_',' ')));}
+  if(run.errors?.message)details.append(el('p',run.errors.message));
+  if(run.resume_block_reason&&run.job&&['failed','paused'].includes(run.status))details.append(el('p',run.resume_block_reason));
+  if(!run.deletion_requested)details.append(link('Download chunk JSON','/v1/documents/'+doc.document_id+'/chunks?run_id='+run.ingestion_run_id));
+  row.append(details);return row;
+}
+async function load(){
+  if(busy)return;
+  try{
+    const r=await fetch('/v1/documents?offset='+offset);
+    if(!r.ok)throw Error('Cannot load documents. Check that the API and database are available.');
+    const data=await r.json();total=data.total;
+    container.replaceChildren();
+    document.querySelector('#count').textContent=total+' documents · '+(data.storage==='supabase'?'Shared storage':'Local storage');
+    for(const d of data.documents){
+      const card=el('article'),heading=el('div'),identity=el('div');heading.className='document-heading';
+      identity.append(el('h2',d.filename),el('p',d.year+' · '+d.total_pages.toLocaleString()+' pages · '+d.runs.length+' runs'));
+      const actions=el('div');actions.className='actions';actions.append(link('Original PDF',d.original_url));
+      const reprocess=action('Reprocess',()=>{const body=pipelineForm();if(body)perform('/v1/documents/'+d.document_id+'/reprocess',body)},'primary');
+      reprocess.disabled=busy||d.runs.some(r=>r.job&&['uploading','queued','processing'].includes(r.status));
+      actions.append(reprocess);heading.append(identity,actions);card.append(heading);
+      const latest=d.runs[d.runs.length-1];
+      if(latest)card.append(renderRun(d,latest,true));else card.append(el('p','No runs. Reprocess this document to create chunks.'));
+      if(d.runs.length>1){
+        const history=el('details');history.className='history';history.open=expandedHistory.has(d.document_id);
+        history.ontoggle=()=>history.open?expandedHistory.add(d.document_id):expandedHistory.delete(d.document_id);
+        history.append(el('summary','Run history · '+(d.runs.length-1)+' earlier runs'));
+        for(const run of d.runs.slice(0,-1).reverse())history.append(renderRun(d,run,false));card.append(history);
+      }
+      container.append(card);
+      if(selectedDocument===d.document_id)showResult(d);
+    }
+    if(!data.documents.length)container.append(el('p','No documents yet. Upload a PDF above.'));
+    document.querySelector('#prev').disabled=offset===0;document.querySelector('#next').disabled=offset+50>=total;
+  }catch(e){notice.textContent=e.message}
+}
+async function removeRun(doc,run){
+  if(busy)return;
+  const message='Delete run '+run.ingestion_run_id.slice(0,8)+' for '+doc.filename+'?\n\nThis permanently removes this run, all its pipeline batches, chunks, checkpoints and generated reports. The original PDF, other runs and shared caches are kept.';
+  if(!confirm(message))return;
+  busy=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);notice.textContent='Deleting the selected run and its saved files…';
+  try{
+    const response=await fetch('/v1/runs/'+run.ingestion_run_id,{method:'DELETE'});
+    const data=await response.json();if(!response.ok)throw Error(data.detail||'Could not delete run');
+    if(selectedRun===run.ingestion_run_id)selectedRun=null;
+    notice.textContent='Run deleted. The original document and other runs are preserved.';
+  }catch(error){notice.textContent=error.message}
+  finally{busy=false;document.querySelectorAll('button').forEach(b=>b.disabled=false);await load()}
+}
+async function perform(url,body){if(busy)return;busy=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);notice.textContent='Processing… Large PDFs may take several minutes. Keep Docker running. Saved runs will appear below.';try{const r=await fetch(url,{method:'POST',body});const data=await r.json();if(!r.ok)throw Error(typeof data.detail==='string'?data.detail:'Processing failed. Check the input and API logs.');notice.replaceChildren(el('span',(data.job?'Job: ':'Finished: ')+data.status+' · '+data.chunk_count+' chunks. '));if(data.debug_url)notice.append(link('Open results',data.debug_url));}catch(e){notice.textContent=e.message+' Refresh the document list before retrying; processing may still be running.'}finally{busy=false;document.querySelectorAll('button').forEach(b=>b.disabled=false);await load()}}
+function showResult(doc){
+  const fallback=[...doc.runs].reverse().find(r=>r.active&&!r.deletion_requested)||doc.runs[doc.runs.length-1];
+  const run=doc.runs.find(r=>r.ingestion_run_id===selectedRun)||fallback;
+  selectedRun=run?.ingestion_run_id||null;
+  const frame=document.querySelector('#comparison'),links=document.querySelector('#result-links');
+  document.querySelector('#result-label').textContent=doc.filename+' · '+doc.year+(run?' · Run '+run.ingestion_run_id.slice(0,8)+' · '+run.status.replaceAll('_',' '):' · No saved runs');
+  links.replaceChildren();
+  if(doc.runs.length){
+    const label=el('label','Choose run ');label.className='result-select';const select=el('select');
+    for(const item of [...doc.runs].reverse()){
+      const option=el('option',item.ingestion_run_id.slice(0,8)+' · '+item.status.replaceAll('_',' ')+' · '+item.chunk_count+' chunks');
+      option.value=item.ingestion_run_id;option.selected=item.ingestion_run_id===selectedRun;select.append(option);
+    }
+    select.onchange=()=>{selectedRun=select.value;showResult(doc)};label.append(select);links.append(label);
+  }
+  if(run?.debug_url&&!run.deletion_requested){
+    links.append(link(run.status==='complete'?'Open results in a full page':'Open saved checkpoint in a full page',run.debug_url));
+    if(run.status!=='complete')links.append(el('p','These are partial saved results. The final comparison appears after all selected pipelines finish.'));
+    if(frame.getAttribute('src')!==run.debug_url)frame.src=run.debug_url;frame.hidden=false;
+  }else{
+    frame.hidden=true;frame.removeAttribute('src');const empty=el('p',run?.deletion_requested?'This run is being deleted. Retry deletion if cleanup failed.':'No saved output for this run yet. Completed batches will become available here.');empty.className='empty-result';links.append(empty);
+  }
+}
+document.querySelector('#pdfs').onchange=e=>{const area=document.querySelector('#upload-years');area.replaceChildren();for(const file of e.target.files){const label=el('label',file.name+' — year ');const input=el('input');input.type='number';input.min='1900';input.max='2100';input.required=true;input.className='file-year';input.setAttribute('aria-label','Year for '+file.name);const match=file.name.match(/(?:19|20)\d{2}/);if(match)input.value=match[0];label.append(input);area.append(label)}};
+document.querySelector('#upload').onsubmit=async e=>{e.preventDefault();if(busy)return;const files=[...document.querySelector('#pdfs').files];const years=[...document.querySelectorAll('.file-year')].map(i=>Number(i.value));const body=pipelineForm();if(!body)return;files.forEach(f=>body.append('files',f));body.append('years',JSON.stringify(years));busy=true;const button=e.target.querySelector('button');button.disabled=true;notice.textContent='Uploading and queueing documents…';try{const response=await fetch('/v1/documents/batch',{method:'POST',body});const data=await response.json();if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Upload failed');notice.replaceChildren(el('p',data.accepted+' documents accepted; '+data.rejected+' rejected.'));for(const item of data.documents){notice.append(el('p',item.filename+': '+(item.error||item.result.status)));if(!selectedDocument&&item.result)selectedDocument=item.result.document_id}offset=0;}catch(error){notice.textContent=error.message}finally{busy=false;button.disabled=false;await load()}};
+document.querySelector('#refresh').onclick=load;document.querySelector('#prev').onclick=()=>{offset=Math.max(0,offset-50);load()};document.querySelector('#next').onclick=()=>{offset+=50;load()};load();setInterval(load,10000);
+</script></html>

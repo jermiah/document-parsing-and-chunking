@@ -1,0 +1,30 @@
+# Default setup: API connected to Supabase PostgreSQL and private Storage.
+services:
+  download-models:
+    profiles: ["setup"]
+    build:
+      context: .
+      target: base
+    command: ["python", "scripts/download_models.py"]
+    environment:
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+    volumes:
+      - ./models:/app/models:rw
+    healthcheck:
+      disable: true
+  api:
+    build:
+      context: .
+      target: base
+    env_file: .env
+    environment:
+      STORAGE_BACKEND: supabase
+      SUPABASE_URL: ${SUPABASE_URL:-https://fctgqpxhufjotwlenjxg.supabase.co}
+      SUPABASE_BUCKET: ${SUPABASE_BUCKET:-document-ingestion}
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - ./models:/app/models:ro
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports

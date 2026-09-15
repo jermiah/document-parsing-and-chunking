@@ -1,0 +1,51 @@
+services:
+  download-models:
+    profiles: ["setup"]
+    build:
+      context: .
+      target: base
+    command: ["python", "scripts/download_models.py"]
+    environment:
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+    volumes:
+      - ./models:/app/models:rw
+    healthcheck:
+      disable: true
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: rag
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build:
+      context: .
+      target: base
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://rag:rag@db:5432/rag
+      CONFIG_PATH: ${CONFIG_PATH:-configs/default.yaml}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ./models:/app/models:ro
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+volumes:
+  postgres-data:

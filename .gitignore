@@ -1,0 +1,25 @@
+.env
+.env.*
+!.env.example
+.venv*/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+models/
+data/
+artifacts/
+reports/
+tmp/
+*.log
+*.pdf
+*.png
+*.ipynb
+# Build outputs and notebook caches
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+*.egg-info/
+build/
+dist/

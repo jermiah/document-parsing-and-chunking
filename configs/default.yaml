@@ -1,0 +1,14 @@
+parser: docling
+ocr_engine: rapidocr
+ocr_fallback_engine: tesseract_cli
+language: en
+force_full_page_ocr: false
+model_dir: models/docling
+tokenizer_path: models/bge-m3/tokenizer.json
+target_tokens: 450
+max_tokens: 700
+overlap_tokens: 0
+max_images: 2
+picture_annotations_enabled: false
+
+compare_workflows: true
